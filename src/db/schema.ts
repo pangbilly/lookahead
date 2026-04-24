@@ -4,6 +4,7 @@ import {
   timestamp,
   uuid,
   integer,
+  boolean,
   primaryKey,
   uniqueIndex,
   index,
@@ -153,10 +154,56 @@ export const programmes = pgTable(
       .references(() => users.id),
     uploadedAt: timestamp('uploaded_at').defaultNow().notNull(),
     extractedAt: timestamp('extracted_at'),
+    activitiesCommittedAt: timestamp('activities_committed_at'),
   },
   (t) => [
     index('programmes_project_idx').on(t.projectId),
     index('programmes_sha_idx').on(t.fileSha256),
+  ],
+);
+
+/* -------------------------------------------------------------------------- */
+/* Activities (committed rows from a programme, per CLAUDE.md §4)              */
+/* -------------------------------------------------------------------------- */
+
+export const activities = pgTable(
+  'activities',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    programmeId: uuid('programme_id')
+      .notNull()
+      .references(() => programmes.id, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    externalId: text('external_id'),
+    wbsPath: text('wbs_path'),
+    name: text('name').notNull(),
+    description: text('description'),
+    startDate: date('start_date'),
+    finishDate: date('finish_date'),
+    startIsActual: boolean('start_is_actual').default(false).notNull(),
+    finishIsActual: boolean('finish_is_actual').default(false).notNull(),
+    startIsConstrained: boolean('start_is_constrained').default(false).notNull(),
+    finishIsConstrained: boolean('finish_is_constrained').default(false).notNull(),
+    remainingDurationDays: integer('remaining_duration_days'),
+    totalFloatDays: integer('total_float_days'),
+    predecessorIds: jsonb('predecessor_ids').$type<string[]>(),
+    resource: text('resource'),
+    byOthers: boolean('by_others').default(false).notNull(),
+    category3: boolean('category_3').default(false).notNull(),
+    activityType: text('activity_type', {
+      enum: ['task', 'milestone', 'summary'],
+    })
+      .notNull()
+      .default('task'),
+    rawJson: jsonb('raw_json'),
+    orderIndex: integer('order_index').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [
+    index('activities_programme_idx').on(t.programmeId),
+    index('activities_project_idx').on(t.projectId),
   ],
 );
 

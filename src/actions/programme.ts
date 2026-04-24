@@ -164,6 +164,7 @@ export async function getProgrammeForUser(programmeId: string, userId: string) {
       rawRows: programmes.rawRows,
       extractionError: programmes.extractionError,
       uploadedAt: programmes.uploadedAt,
+      activitiesCommittedAt: programmes.activitiesCommittedAt,
       projectId: programmes.projectId,
       projectName: projects.name,
       organizationSlug: organizations.slug,

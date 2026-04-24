@@ -1,6 +1,9 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { getActivityCountForProgramme } from '@/actions/activity';
 import { getProgrammeForUser } from '@/actions/programme';
+import { ReviewGrid } from '@/components/programme/ReviewGrid';
+import { UncommitButton } from '@/components/programme/UncommitButton';
 import { requireUser } from '@/lib/auth-helpers';
 
 export async function generateMetadata({
@@ -22,21 +25,6 @@ const toolLabels: Record<string, string> = {
   other: 'Unknown',
 };
 
-const DATE_COLUMNS = new Set(['Start', 'Finish', 'Baseline Start', 'Baseline Finish']);
-
-/**
- * Strip P6 date annotations for display:
- *   'A'  = actual (date is historical)
- *   '*'  = constraint (user-imposed)
- * Raw value with annotations is preserved in rawRows for Phase 2+ logic
- * that needs to know whether a date is actualised or constrained.
- */
-function displayCellValue(col: string, raw: string | null | undefined): string {
-  if (!raw) return '';
-  if (!DATE_COLUMNS.has(col)) return raw;
-  return raw.replace(/\s*[A*]+\s*$/, '').trim();
-}
-
 export default async function ProgrammeDetailPage({
   params,
 }: {
@@ -54,8 +42,12 @@ export default async function ProgrammeDetailPage({
     notFound();
   }
 
-  const rowsPreview = (programme.rawRows ?? []).slice(0, 50);
   const columns = programme.detectedColumns ?? [];
+  const rawRows = programme.rawRows ?? [];
+  const isCommitted = programme.activitiesCommittedAt !== null;
+  const activityCount = isCommitted
+    ? await getActivityCountForProgramme(programme.id)
+    : 0;
 
   return (
     <main className="px-10 py-16">
@@ -138,76 +130,67 @@ export default async function ProgrammeDetailPage({
         </section>
       )}
 
-      {programme.status === 'extracted' && (
+      {programme.status === 'extracted' && !isCommitted && (
         <>
-          <section className="mt-12">
-            <div className="flex items-center justify-between">
-              <h2 className="display-uppercase text-[color:var(--foreground)] text-sm">
-                Extracted rows ({(programme.rawRows ?? []).length} total, showing first {rowsPreview.length})
+          {columns.length > 0 && columns[0] !== '_raw' ? (
+            <ReviewGrid
+              programmeId={programme.id}
+              columns={columns}
+              initialRows={rawRows}
+            />
+          ) : (
+            <section className="mt-10 max-w-3xl border border-[color:var(--accent)]/50 p-8">
+              <h2 className="display-uppercase text-[color:var(--accent)] text-sm">
+                Tool not detected
               </h2>
-              <span className="text-xs text-[color:var(--foreground)]/60">
-                Raw preview · editable grid arrives in PR 5b
-              </span>
-            </div>
-
-            {columns.length > 0 && columns[0] !== '_raw' ? (
-              <div className="mt-6 overflow-x-auto border border-[color:var(--border)]/40">
-                <table className="w-full min-w-[960px] border-collapse text-xs">
-                  <thead>
-                    <tr className="border-b border-[color:var(--border)]/40 bg-[color:var(--foreground)]/5">
-                      {columns.map((col, i) => (
-                        <th
-                          key={`${col}-${i}`}
-                          className="px-3 py-3 text-left display-uppercase text-[color:var(--foreground)]"
-                        >
-                          {col}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rowsPreview.map((row, i) => (
-                      <tr
-                        key={i}
-                        className="border-b border-[color:var(--border)]/20 hover:bg-[color:var(--foreground)]/5"
-                      >
-                        {columns.map((col, j) => (
-                          <td
-                            key={j}
-                            className="px-3 py-2 align-top text-[color:var(--foreground)]/90"
-                          >
-                            {col === '_raw'
-                              ? (row._raw ?? '')
-                              : displayCellValue(col, row[col])}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <ul className="mt-6 divide-y divide-[color:var(--border)]/20 border border-[color:var(--border)]/40">
-                {rowsPreview.map((row, i) => (
-                  <li key={i} className="px-4 py-2 text-xs text-[color:var(--foreground)]/80">
-                    {row._raw}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section className="mt-10 max-w-3xl border border-[color:var(--border)]/40 p-8">
-            <h2 className="display-uppercase text-[color:var(--foreground)] text-sm">
-              Next
-            </h2>
-            <p className="mt-3 text-sm text-[color:var(--foreground)]/80">
-              PR 5b will add an editable review grid so you can fix
-              misaligned cells and confirm the activities before committing
-              to the database. PR 6 then generates a lookahead.
-            </p>
-          </section>
+              <p className="mt-4 text-sm text-[color:var(--foreground)]/80">
+                The extractor couldn&apos;t identify this as an MS Project or
+                Primavera P6 export. Re-upload a different PDF, or wait for the
+                Claude-vision fallback in a later phase.
+              </p>
+              <details className="mt-6">
+                <summary className="display-uppercase text-xs text-[color:var(--foreground)]/70 cursor-pointer">
+                  Show raw rows
+                </summary>
+                <ul className="mt-4 max-h-96 overflow-y-auto divide-y divide-[color:var(--border)]/20 border border-[color:var(--border)]/40">
+                  {rawRows.slice(0, 200).map((row, i) => (
+                    <li
+                      key={i}
+                      className="px-4 py-2 text-xs text-[color:var(--foreground)]/80"
+                    >
+                      {row._raw}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </section>
+          )}
         </>
+      )}
+
+      {programme.status === 'extracted' && isCommitted && (
+        <section className="mt-12 max-w-3xl border border-[color:var(--border)]/40 p-8">
+          <h2 className="display-uppercase text-[color:var(--foreground)] text-sm">
+            Activities committed
+          </h2>
+          <p className="mt-4 text-sm text-[color:var(--foreground)]/80">
+            <span className="text-[color:var(--foreground-strong)]">{activityCount}</span>{' '}
+            activit{activityCount === 1 ? 'y' : 'ies'} committed on{' '}
+            {programme.activitiesCommittedAt
+              ? programme.activitiesCommittedAt
+                  .toISOString()
+                  .slice(0, 19)
+                  .replace('T', ' ')
+              : ''}
+            . These are now available to the lookahead generator in PR 6.
+          </p>
+          <div className="mt-6 flex items-center gap-4">
+            <UncommitButton programmeId={programme.id} />
+            <span className="text-xs text-[color:var(--foreground)]/50">
+              Uncommitting removes the activities rows and lets you re-edit.
+            </span>
+          </div>
+        </section>
       )}
     </main>
   );
