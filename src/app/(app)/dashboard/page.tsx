@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { listMyOrgs } from '@/actions/org';
+import { listMyRecentProjects } from '@/actions/project';
 import { CreateOrgForm } from '@/components/org/CreateOrgForm';
 
 export const metadata = {
@@ -7,15 +8,16 @@ export const metadata = {
 };
 
 export default async function DashboardPage() {
-  const orgs = await listMyOrgs();
+  const [orgs, recentProjects] = await Promise.all([
+    listMyOrgs(),
+    listMyRecentProjects(5),
+  ]);
 
   return (
     <main className="px-10 py-16">
-      <div className="flex items-end justify-between">
-        <h1 className="display-uppercase text-[color:var(--foreground-strong)] text-4xl">
-          Dashboard
-        </h1>
-      </div>
+      <h1 className="display-uppercase text-[color:var(--foreground-strong)] text-4xl">
+        Dashboard
+      </h1>
 
       <section className="mt-12 max-w-3xl">
         <h2 className="display-uppercase text-[color:var(--foreground)] text-sm">
@@ -26,7 +28,7 @@ export default async function DashboardPage() {
           <div className="mt-6 border border-[color:var(--border)]/40 p-10">
             <p className="text-sm text-[color:var(--foreground)]/80">
               You&apos;re not in any organisations yet. Create your first one to start
-              adding projects and inviting your team.
+              adding projects.
             </p>
             <div className="mt-8">
               <CreateOrgForm />
@@ -68,6 +70,33 @@ export default async function DashboardPage() {
           </>
         )}
       </section>
+
+      {recentProjects.length > 0 && (
+        <section className="mt-16 max-w-3xl">
+          <h2 className="display-uppercase text-[color:var(--foreground)] text-sm">
+            Recent projects
+          </h2>
+          <ul className="mt-6 divide-y divide-[color:var(--border)]/30 border border-[color:var(--border)]/40">
+            {recentProjects.map((project) => (
+              <li key={project.id}>
+                <Link
+                  href={`/orgs/${project.organizationSlug}/projects/${project.id}`}
+                  className="flex items-center justify-between gap-6 px-6 py-5 hover:bg-[color:var(--foreground)]/5"
+                >
+                  <div>
+                    <p className="text-[color:var(--foreground-strong)] text-base">
+                      {project.name}
+                    </p>
+                    <p className="text-xs text-[color:var(--foreground)]/60">
+                      {project.organizationName}
+                    </p>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </main>
   );
 }
