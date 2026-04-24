@@ -191,14 +191,18 @@ function mapRowToColumns(
 }
 
 function pickColumnIndex(x: number, columnXs: number[]): number {
-  // The cell belongs to the last column whose header x is <= cell x.
-  // If the cell sits left of the first column, bucket it into the first.
-  let idx = 0;
-  for (let i = 0; i < columnXs.length; i++) {
-    if (columnXs[i] <= x) idx = i;
-    else break;
+  // Bucket by midpoint between adjacent header xs. Data cells inside a
+  // column are typically left- or centre-aligned and can sit slightly to
+  // the left of the header's detected x (especially dates under a
+  // right-aligned header). Pure "last x <= cell.x" would push those cells
+  // back into the previous column. The midpoint boundary is symmetric.
+  if (x < (columnXs[0] + columnXs[1]) / 2) return 0;
+  for (let i = 1; i < columnXs.length - 1; i++) {
+    const leftMid = (columnXs[i - 1] + columnXs[i]) / 2;
+    const rightMid = (columnXs[i] + columnXs[i + 1]) / 2;
+    if (x >= leftMid && x < rightMid) return i;
   }
-  return idx;
+  return columnXs.length - 1;
 }
 
 function hasAnyValue(row: ExtractedRow): boolean {
