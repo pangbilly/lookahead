@@ -97,44 +97,53 @@ function matchHeaderCells(
   canonical: string[],
   lcCanonical: string[],
 ): Omit<HeaderMatch, 'pageNumber' | 'rowIndex'> | null {
-  // Walk cells left-to-right; collect the first occurrence of each canonical
-  // column. Multi-word headers (e.g. "Activity Name") may span two cells —
-  // concatenate adjacent cells until the prefix matches.
+  // For each canonical column, scan the cells from the current cursor onward.
+  // For each start position, try spans 1..4 cells and accept if the joined
+  // lowercased text either equals the needle or starts with "<needle> ".
+  //
+  // For multi-word needles (e.g. "Remaining Duration", "Total Float") the
+  // PDF may render the two words on stacked y-lines, so the header row only
+  // contains the first word. Fall back to matching just that first word as
+  // a standalone cell — acceptable risk for the known canonical vocabulary.
   const columns: string[] = [];
   const columnXs: number[] = [];
   let cursor = 0;
+
   for (let idx = 0; idx < canonical.length; idx++) {
     const needle = lcCanonical[idx];
-    let found = false;
-    let combined = '';
-    let combinedX = 0;
-    let startCursor = cursor;
-    for (let c = cursor; c < row.cells.length; c++) {
-      const cell = row.cells[c];
-      if (combined.length === 0) {
-        combined = cell.text.toLowerCase();
-        combinedX = cell.x;
-        startCursor = c;
-      } else {
-        combined = (combined + ' ' + cell.text).toLowerCase();
+    const firstWord = needle.split(' ')[0];
+    const isMultiWord = needle.includes(' ');
+
+    let matched = false;
+    for (let start = cursor; start < row.cells.length && !matched; start++) {
+      const maxSpan = Math.min(4, row.cells.length - start);
+      for (let span = 1; span <= maxSpan; span++) {
+        const joined = row.cells
+          .slice(start, start + span)
+          .map((c) => c.text.toLowerCase())
+          .join(' ');
+        if (joined === needle || joined.startsWith(needle + ' ')) {
+          columns.push(canonical[idx]);
+          columnXs.push(row.cells[start].x);
+          cursor = start + span;
+          matched = true;
+          break;
+        }
       }
-      if (combined.startsWith(needle)) {
-        columns.push(canonical[idx]);
-        columnXs.push(combinedX);
-        cursor = c + 1;
-        found = true;
-        break;
-      }
-      // Don't let combined strings balloon — cap concatenation at 3 cells.
-      if (c - startCursor >= 2) {
-        combined = '';
+      if (matched) break;
+
+      if (isMultiWord) {
+        const cellText = row.cells[start].text.toLowerCase();
+        if (cellText === firstWord || cellText.startsWith(firstWord + ' ')) {
+          columns.push(canonical[idx]);
+          columnXs.push(row.cells[start].x);
+          cursor = start + 1;
+          matched = true;
+        }
       }
     }
-    if (!found) {
-      // Skip non-required columns silently; optional ones (By Others, etc.)
-      // may not appear on every export.
-      continue;
-    }
+    // Unmatched column: cursor stays put; next canonical column gets a chance
+    // from the same position.
   }
 
   if (columns.length < 3) return null;
