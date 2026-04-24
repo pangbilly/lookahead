@@ -182,14 +182,21 @@ export default async function ProgrammeDetailPage({
                   .slice(0, 19)
                   .replace('T', ' ')
               : ''}
-            . These are now available to the lookahead generator in PR 6.
+            .
           </p>
           <div className="mt-6 flex items-center gap-4">
+            <Link
+              href={`/orgs/${programme.organizationSlug}/projects/${programme.projectId}/lookahead`}
+              className="display-uppercase text-xs text-[color:var(--accent)] hover:underline underline-offset-4"
+            >
+              Generate a lookahead →
+            </Link>
+            <span className="text-[color:var(--foreground)]/30">·</span>
             <UncommitButton programmeId={programme.id} />
-            <span className="text-xs text-[color:var(--foreground)]/50">
-              Uncommitting removes the activities rows and lets you re-edit.
-            </span>
           </div>
+          <p className="mt-4 text-xs text-[color:var(--foreground)]/50">
+            Uncommitting removes the activities rows and lets you re-edit.
+          </p>
         </section>
       )}
     </main>
