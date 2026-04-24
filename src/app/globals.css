@@ -1,0 +1,41 @@
+@import 'tailwindcss';
+
+/* SpaceX palette (spacex-DESIGN.md). Dark-only; no toggle. */
+:root {
+  --background: #000000;
+  --foreground: #f0f0fa;
+  --foreground-strong: #ffffff;
+  --accent: #0000ee;
+  --border: #808080;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-foreground-strong: var(--foreground-strong);
+  --color-accent: var(--accent);
+  --color-border-subtle: var(--border);
+  --font-sans: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+html,
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Uppercase display utility — SpaceX nav + CTAs */
+.display-uppercase {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--foreground-strong);
+}
