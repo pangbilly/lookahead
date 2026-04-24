@@ -28,17 +28,18 @@ export async function createOrg(input: CreateOrgInput): Promise<OrgActionResult>
   const { name } = parsed.data;
   const slug = await uniqueOrgSlug(name);
 
-  await db.transaction(async (tx) => {
-    const [org] = await tx
-      .insert(organizations)
-      .values({ name, slug })
-      .returning({ id: organizations.id });
-    await tx.insert(organizationMembers).values({
-      organizationId: org.id,
+  // neon-http doesn't support multi-statement transactions; use batch() which
+  // pipelines both inserts in a single atomic HTTP request. We generate the
+  // org id in JS so the membership insert can reference it inside the batch.
+  const organizationId = crypto.randomUUID();
+  await db.batch([
+    db.insert(organizations).values({ id: organizationId, name, slug }),
+    db.insert(organizationMembers).values({
+      organizationId,
       userId: user.id,
       role: 'owner',
-    });
-  });
+    }),
+  ]);
 
   revalidatePath('/dashboard');
   return { ok: true, slug };
