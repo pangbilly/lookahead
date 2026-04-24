@@ -208,32 +208,51 @@ function pickColumnIndex(x: number, columnXs: number[]): number {
 
 /**
  * Some P6/MSP exports render `<duration> <start-date>` as a single text item
- * (adjacent characters with no gap wide enough for pdfjs to split). When
- * the duration column's value looks like "30 02-Apr-29" or "5 days 22/04/26",
- * split the trailing date off into the Start column.
+ * (adjacent characters with no gap wide enough for pdfjs to split). The
+ * merged string can end up in either the duration column or — for summary
+ * rows where the content sits further right — the Start column.
+ *
+ * P6 date annotations preserved in the stored value:
+ *   'A'  = actual (date has already happened)
+ *   '*'  = constraint (user-imposed, not calculated from logic)
+ * These are meaningful in Phase 2 (lookahead generation cares whether a
+ * date is actual vs planned vs constrained). We strip them only for
+ * display in the preview table.
  */
 function splitMergedDurationStart(record: ExtractedRow, tool: DetectedTool) {
   const durationCol = tool === 'primavera_p6' ? 'Remaining Duration' : 'Duration';
-  const value = record[durationCol];
-  if (!value) return;
 
-  // P6 dates: DD-MMM-YY, optional trailing 'A' (actual) or '*' (constraint)
-  // MSP dates: DD/MM/YY
-  const p6DateRE = /(\d{1,2}-[A-Za-z]{3}-\d{2,4}(?:\s*[A*])?)\s*$/;
+  const p6DateRE = /(\d{1,2}-[A-Za-z]{3}-\d{2,4}(?:\s*[A*]+)?)\s*$/;
   const mspDateRE = /(\d{1,2}\/\d{1,2}\/\d{2,4})\s*$/;
   const dateRE = tool === 'primavera_p6' ? p6DateRE : mspDateRE;
 
-  const dateMatch = value.match(dateRE);
-  if (!dateMatch) return;
+  // Case 1: duration column ends with a date — peel date off into Start.
+  const durVal = record[durationCol];
+  if (durVal) {
+    const m = durVal.match(dateRE);
+    if (m) {
+      const trailing = m[1].trim();
+      const remaining = durVal.slice(0, durVal.length - m[0].length).trim();
+      if (remaining.length > 0) {
+        record[durationCol] = remaining;
+        if (!record['Start']?.trim()) record['Start'] = trailing;
+      }
+    }
+  }
 
-  const trailingDate = dateMatch[1].trim();
-  const remaining = value.slice(0, value.length - dateMatch[0].length).trim();
-  if (remaining.length === 0) return; // value was just a date; leave it alone
-
-  record[durationCol] = remaining;
-  const existingStart = record['Start']?.trim() ?? '';
-  if (existingStart.length === 0) {
-    record['Start'] = trailingDate;
+  // Case 2: Start column starts with a standalone number (duration) followed
+  // by a date. Happens on summary rows where both fields got bucketed into
+  // Start because their combined x fell within Start's midpoint window.
+  const startVal = record['Start'];
+  if (startVal) {
+    const leadingNumRE = /^(\d+(?:\s*\w+)?)\s+(\d{1,2}[-/][A-Za-z0-9]{1,3}[-/]\d{2,4}(?:\s*[A*]+)?)\s*$/;
+    const m = startVal.match(leadingNumRE);
+    if (m) {
+      const duration = m[1].trim();
+      const date = m[2].trim();
+      if (!record[durationCol]?.trim()) record[durationCol] = duration;
+      record['Start'] = date;
+    }
   }
 }
 

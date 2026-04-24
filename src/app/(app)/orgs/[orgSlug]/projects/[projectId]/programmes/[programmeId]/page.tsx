@@ -22,6 +22,21 @@ const toolLabels: Record<string, string> = {
   other: 'Unknown',
 };
 
+const DATE_COLUMNS = new Set(['Start', 'Finish', 'Baseline Start', 'Baseline Finish']);
+
+/**
+ * Strip P6 date annotations for display:
+ *   'A'  = actual (date is historical)
+ *   '*'  = constraint (user-imposed)
+ * Raw value with annotations is preserved in rawRows for Phase 2+ logic
+ * that needs to know whether a date is actualised or constrained.
+ */
+function displayCellValue(col: string, raw: string | null | undefined): string {
+  if (!raw) return '';
+  if (!DATE_COLUMNS.has(col)) return raw;
+  return raw.replace(/\s*[A*]+\s*$/, '').trim();
+}
+
 export default async function ProgrammeDetailPage({
   params,
 }: {
@@ -161,7 +176,9 @@ export default async function ProgrammeDetailPage({
                             key={j}
                             className="px-3 py-2 align-top text-[color:var(--foreground)]/90"
                           >
-                            {row[col] ?? (col === '_raw' ? row._raw : '')}
+                            {col === '_raw'
+                              ? (row._raw ?? '')
+                              : displayCellValue(col, row[col])}
                           </td>
                         ))}
                       </tr>
