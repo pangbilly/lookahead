@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getProjectForUser } from '@/actions/project';
+import { listProgrammesForProject } from '@/actions/programme';
 import { requireUser } from '@/lib/auth-helpers';
+import { Button } from '@/components/ui/button';
 
 export async function generateMetadata({
   params,
@@ -14,6 +16,19 @@ export async function generateMetadata({
   return { title: project ? `${project.name} — Lookahead` : 'Project — Lookahead' };
 }
 
+const toolLabels: Record<string, string> = {
+  ms_project: 'MS Project',
+  primavera_p6: 'Primavera P6',
+  other: 'Unknown',
+};
+
+const statusLabels: Record<string, string> = {
+  uploaded: 'Uploaded',
+  extracting: 'Extracting…',
+  extracted: 'Extracted',
+  failed: 'Failed',
+};
+
 export default async function ProjectPage({
   params,
 }: {
@@ -24,6 +39,9 @@ export default async function ProjectPage({
   const project = await getProjectForUser(projectId, user.id);
 
   if (!project || project.organizationSlug !== orgSlug) notFound();
+
+  const programmesList = await listProgrammesForProject(project.id);
+  const canUpload = project.role === 'owner' || project.role === 'pm';
 
   return (
     <main className="px-10 py-16">
@@ -49,7 +67,10 @@ export default async function ProjectPage({
           </h1>
           {project.client && (
             <p className="mt-3 text-sm text-[color:var(--foreground)]/70">
-              Client: <span className="text-[color:var(--foreground-strong)]">{project.client}</span>
+              Client:{' '}
+              <span className="text-[color:var(--foreground-strong)]">
+                {project.client}
+              </span>
             </p>
           )}
           {(project.startDate || project.endDate) && (
@@ -72,15 +93,66 @@ export default async function ProjectPage({
       )}
 
       <section className="mt-12 max-w-3xl">
-        <h2 className="display-uppercase text-[color:var(--foreground)] text-sm">
-          Programme
-        </h2>
-        <div className="mt-6 border border-[color:var(--border)]/40 p-10">
-          <p className="text-sm text-[color:var(--foreground)]/80">
-            Programme upload arrives in PR 5a. Once uploaded, we&apos;ll extract
-            the activities and let you confirm them before generating a lookahead.
-          </p>
+        <div className="flex items-center justify-between">
+          <h2 className="display-uppercase text-[color:var(--foreground)] text-sm">
+            Programmes
+          </h2>
+          {canUpload && programmesList.length > 0 && (
+            <Button asChild size="sm">
+              <Link
+                href={`/orgs/${project.organizationSlug}/projects/${project.id}/upload`}
+              >
+                Upload
+              </Link>
+            </Button>
+          )}
         </div>
+
+        {programmesList.length === 0 ? (
+          <div className="mt-6 border border-[color:var(--border)]/40 p-10">
+            <p className="text-sm text-[color:var(--foreground)]/80">
+              No programmes uploaded yet.
+              {canUpload
+                ? ' Upload a PDF exported from MS Project or Primavera P6 to get started.'
+                : ' An owner or PM needs to upload the first programme.'}
+            </p>
+            {canUpload && (
+              <div className="mt-8">
+                <Button asChild size="lg">
+                  <Link
+                    href={`/orgs/${project.organizationSlug}/projects/${project.id}/upload`}
+                  >
+                    Upload programme
+                  </Link>
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <ul className="mt-6 divide-y divide-[color:var(--border)]/30 border border-[color:var(--border)]/40">
+            {programmesList.map((p) => (
+              <li key={p.id}>
+                <Link
+                  href={`/orgs/${project.organizationSlug}/projects/${project.id}/programmes/${p.id}`}
+                  className="flex items-center justify-between gap-6 px-6 py-5 hover:bg-[color:var(--foreground)]/5"
+                >
+                  <div>
+                    <p className="text-[color:var(--foreground-strong)] text-base break-all">
+                      {p.fileName}
+                    </p>
+                    <p className="text-xs text-[color:var(--foreground)]/60">
+                      {toolLabels[p.sourceToolDetected ?? 'other']} ·{' '}
+                      {p.uploadedAt.toISOString().slice(0, 10)}
+                    </p>
+                  </div>
+                  <span className="display-uppercase text-xs text-[color:var(--foreground)]/70">
+                    {statusLabels[p.status] ?? p.status}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </main>
   );

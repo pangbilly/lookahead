@@ -8,6 +8,7 @@ import {
   uniqueIndex,
   index,
   date,
+  jsonb,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import type { AdapterAccountType } from 'next-auth/adapters';
@@ -113,6 +114,50 @@ export const projects = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (t) => [index('projects_org_idx').on(t.organizationId)],
+);
+
+/* -------------------------------------------------------------------------- */
+/* Programmes (uploaded PDFs + extracted rows)                                 */
+/* -------------------------------------------------------------------------- */
+
+export type ExtractedRow = Record<string, string | null>;
+
+export const programmes = pgTable(
+  'programmes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    fileName: text('file_name').notNull(),
+    fileSha256: text('file_sha256').notNull(),
+    sourceFileUrl: text('source_file_url').notNull(),
+    sourceFormat: text('source_format', {
+      enum: ['pdf', 'xlsx', 'mpp', 'xer', 'xml'],
+    })
+      .notNull()
+      .default('pdf'),
+    sourceToolDetected: text('source_tool_detected', {
+      enum: ['ms_project', 'primavera_p6', 'other'],
+    }),
+    status: text('status', {
+      enum: ['uploaded', 'extracting', 'extracted', 'failed'],
+    })
+      .notNull()
+      .default('uploaded'),
+    detectedColumns: jsonb('detected_columns').$type<string[]>(),
+    rawRows: jsonb('raw_rows').$type<ExtractedRow[]>(),
+    extractionError: text('extraction_error'),
+    uploadedBy: text('uploaded_by')
+      .notNull()
+      .references(() => users.id),
+    uploadedAt: timestamp('uploaded_at').defaultNow().notNull(),
+    extractedAt: timestamp('extracted_at'),
+  },
+  (t) => [
+    index('programmes_project_idx').on(t.projectId),
+    index('programmes_sha_idx').on(t.fileSha256),
+  ],
 );
 
 /* -------------------------------------------------------------------------- */
