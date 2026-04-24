@@ -79,6 +79,12 @@ export default async function ProjectPage({
             </p>
           )}
         </div>
+        <Link
+          href={`/orgs/${project.organizationSlug}/projects/${project.id}/lookahead`}
+          className="display-uppercase text-xs text-[color:var(--accent)] hover:underline underline-offset-4"
+        >
+          Lookahead →
+        </Link>
       </div>
 
       {project.description && (

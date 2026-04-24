@@ -208,6 +208,70 @@ export const activities = pgTable(
 );
 
 /* -------------------------------------------------------------------------- */
+/* Lookahead windows + tasks                                                   */
+/* -------------------------------------------------------------------------- */
+
+export const lookaheadWindows = pgTable(
+  'lookahead_windows',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    windowStart: date('window_start').notNull(),
+    windowEnd: date('window_end').notNull(),
+    windowWeeks: integer('window_weeks').notNull(),
+    publishedBy: text('published_by')
+      .notNull()
+      .references(() => users.id),
+    publishedAt: timestamp('published_at').defaultNow().notNull(),
+  },
+  (t) => [index('lookahead_windows_project_idx').on(t.projectId)],
+);
+
+export const tasks = pgTable(
+  'tasks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    activityId: uuid('activity_id').references(() => activities.id, {
+      onDelete: 'set null',
+    }),
+    lookaheadWindowId: uuid('lookahead_window_id').references(
+      () => lookaheadWindows.id,
+      { onDelete: 'set null' },
+    ),
+    title: text('title').notNull(),
+    description: text('description'),
+    startDate: date('start_date'),
+    dueDate: date('due_date'),
+    assigneeId: text('assignee_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id),
+    status: text('status', {
+      enum: ['todo', 'in_progress', 'blocked', 'done', 'cancelled'],
+    })
+      .notNull()
+      .default('todo'),
+    blockerNote: text('blocker_note'),
+    completedAt: timestamp('completed_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [
+    index('tasks_project_idx').on(t.projectId),
+    index('tasks_assignee_idx').on(t.assigneeId),
+    index('tasks_window_idx').on(t.lookaheadWindowId),
+    index('tasks_activity_idx').on(t.activityId),
+  ],
+);
+
+/* -------------------------------------------------------------------------- */
 /* Invitations                                                                 */
 /* -------------------------------------------------------------------------- */
 
