@@ -102,6 +102,24 @@ export default async function ProgrammeDetailPage({
           <p className="mt-4 text-sm text-[color:var(--foreground)]/80 whitespace-pre-line">
             {programme.extractionError ?? 'Unknown error'}
           </p>
+          <p className="mt-6 text-xs text-[color:var(--foreground)]/60">
+            Re-upload the same file from the project page to retry extraction.
+          </p>
+        </section>
+      )}
+
+      {(programme.status === 'extracting' || programme.status === 'uploaded') && (
+        <section className="mt-10 max-w-3xl border border-[color:var(--border)]/40 p-8">
+          <h2 className="display-uppercase text-[color:var(--foreground)] text-sm">
+            Extraction pending
+          </h2>
+          <p className="mt-4 text-sm text-[color:var(--foreground)]/80">
+            This programme was uploaded but extraction didn&apos;t complete
+            successfully. Re-upload the same file from the project page to retry.
+          </p>
+          <p className="mt-4 text-xs text-[color:var(--foreground)]/60">
+            Status: {programme.status}
+          </p>
         </section>
       )}
 

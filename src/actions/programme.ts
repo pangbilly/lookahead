@@ -52,13 +52,19 @@ export async function uploadProgramme(
   const buffer = Buffer.from(await file.arrayBuffer());
   const sha256 = createHash('sha256').update(buffer).digest('hex');
 
-  // Cache hit — same bytes already uploaded for this project.
+  // Cache hit — only trust rows that actually completed extraction. Stale
+  // 'extracting' or 'failed' rows from earlier attempts should be retried.
   const [existing] = await db
-    .select({ id: programmes.id })
+    .select({
+      id: programmes.id,
+      status: programmes.status,
+      sourceFileUrl: programmes.sourceFileUrl,
+    })
     .from(programmes)
     .where(and(eq(programmes.projectId, projectId), eq(programmes.fileSha256, sha256)))
     .limit(1);
-  if (existing) {
+
+  if (existing && existing.status === 'extracted') {
     return {
       ok: true,
       programmeId: existing.id,
@@ -67,21 +73,31 @@ export async function uploadProgramme(
     };
   }
 
-  const blob = await uploadProgrammePdf(projectId, file.name, buffer);
-
-  // Insert the programme row with status 'extracting' and kick extraction.
-  const [row] = await db
-    .insert(programmes)
-    .values({
-      projectId,
-      fileName: file.name,
-      fileSha256: sha256,
-      sourceFileUrl: blob.url,
-      sourceFormat: 'pdf',
-      status: 'extracting',
-      uploadedBy: user.id,
-    })
-    .returning({ id: programmes.id });
+  // Either a fresh upload or a prior failed attempt we need to retry.
+  let programmeId: string;
+  if (existing) {
+    // Reuse the row + blob from the prior attempt; just re-run extraction.
+    programmeId = existing.id;
+    await db
+      .update(programmes)
+      .set({ status: 'extracting', extractionError: null })
+      .where(eq(programmes.id, existing.id));
+  } else {
+    const blob = await uploadProgrammePdf(projectId, file.name, buffer);
+    const [row] = await db
+      .insert(programmes)
+      .values({
+        projectId,
+        fileName: file.name,
+        fileSha256: sha256,
+        sourceFileUrl: blob.url,
+        sourceFormat: 'pdf',
+        status: 'extracting',
+        uploadedBy: user.id,
+      })
+      .returning({ id: programmes.id });
+    programmeId = row.id;
+  }
 
   // Run extraction inline — Phase 1 PDFs are small (2–8 pages). Long-running
   // extraction can be moved to a queue in Phase 2.
@@ -100,13 +116,13 @@ export async function uploadProgramme(
         extractedAt: new Date(),
         extractionError: null,
       })
-      .where(eq(programmes.id, row.id));
+      .where(eq(programmes.id, programmeId));
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     await db
       .update(programmes)
       .set({ status: 'failed', extractionError: message })
-      .where(eq(programmes.id, row.id));
+      .where(eq(programmes.id, programmeId));
     return { ok: false, error: `Extraction failed: ${message}` };
   }
 
@@ -114,7 +130,7 @@ export async function uploadProgramme(
 
   return {
     ok: true,
-    programmeId: row.id,
+    programmeId,
     orgSlug: project.organizationSlug,
     projectId: project.id,
   };
