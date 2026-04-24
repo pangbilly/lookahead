@@ -62,6 +62,7 @@ export function parseRows(pages: ExtractedPage[], tool: DetectedTool): ParseResu
 
       const mapped = mapRowToColumns(row, columns, columnXs, rightEdge);
       if (mapped && hasAnyValue(mapped)) {
+        splitMergedDurationStart(mapped, tool);
         rows.push(mapped);
         totalRowsSeen++;
       }
@@ -203,6 +204,37 @@ function pickColumnIndex(x: number, columnXs: number[]): number {
     if (x >= leftMid && x < rightMid) return i;
   }
   return columnXs.length - 1;
+}
+
+/**
+ * Some P6/MSP exports render `<duration> <start-date>` as a single text item
+ * (adjacent characters with no gap wide enough for pdfjs to split). When
+ * the duration column's value looks like "30 02-Apr-29" or "5 days 22/04/26",
+ * split the trailing date off into the Start column.
+ */
+function splitMergedDurationStart(record: ExtractedRow, tool: DetectedTool) {
+  const durationCol = tool === 'primavera_p6' ? 'Remaining Duration' : 'Duration';
+  const value = record[durationCol];
+  if (!value) return;
+
+  // P6 dates: DD-MMM-YY, optional trailing 'A' (actual) or '*' (constraint)
+  // MSP dates: DD/MM/YY
+  const p6DateRE = /(\d{1,2}-[A-Za-z]{3}-\d{2,4}(?:\s*[A*])?)\s*$/;
+  const mspDateRE = /(\d{1,2}\/\d{1,2}\/\d{2,4})\s*$/;
+  const dateRE = tool === 'primavera_p6' ? p6DateRE : mspDateRE;
+
+  const dateMatch = value.match(dateRE);
+  if (!dateMatch) return;
+
+  const trailingDate = dateMatch[1].trim();
+  const remaining = value.slice(0, value.length - dateMatch[0].length).trim();
+  if (remaining.length === 0) return; // value was just a date; leave it alone
+
+  record[durationCol] = remaining;
+  const existingStart = record['Start']?.trim() ?? '';
+  if (existingStart.length === 0) {
+    record['Start'] = trailingDate;
+  }
 }
 
 function hasAnyValue(row: ExtractedRow): boolean {
