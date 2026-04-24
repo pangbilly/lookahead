@@ -1,18 +1,17 @@
-import { put, del } from '@vercel/blob';
+import { put, del, get } from '@vercel/blob';
 
 export async function uploadProgrammePdf(
   projectId: string,
   fileName: string,
   body: Buffer | Blob,
 ): Promise<{ url: string; pathname: string }> {
-  // Path shape: programmes/{projectId}/{timestamp}-{fileName}
-  // The addRandomSuffix=true below makes pathname unique even for identical
-  // filenames — we don't dedupe here because we also hash the file contents
-  // and rely on that for the cache key.
+  // Programme PDFs are customer business data — the Vercel Blob store is
+  // configured private. Uploads use access: 'private'; download goes
+  // through the authenticated /api/programmes/[id]/download route.
   const safeName = fileName.replace(/[^\w.\-]+/g, '_');
   const pathname = `programmes/${projectId}/${safeName}`;
   const result = await put(pathname, body, {
-    access: 'public',
+    access: 'private',
     addRandomSuffix: true,
     contentType: 'application/pdf',
   });
@@ -21,4 +20,9 @@ export async function uploadProgrammePdf(
 
 export async function deleteProgrammePdf(url: string): Promise<void> {
   await del(url);
+}
+
+/** Fetches a private blob; caller must gate by auth + membership first. */
+export async function getProgrammePdf(url: string) {
+  return get(url, { access: 'private' });
 }

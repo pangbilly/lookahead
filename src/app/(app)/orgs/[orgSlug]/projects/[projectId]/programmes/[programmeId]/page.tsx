@@ -85,7 +85,7 @@ export default async function ProgrammeDetailPage({
           </p>
         </div>
         <a
-          href={programme.sourceFileUrl}
+          href={`/api/programmes/${programme.id}/download`}
           target="_blank"
           rel="noopener noreferrer"
           className="display-uppercase text-xs text-[color:var(--accent)] hover:underline underline-offset-4"
