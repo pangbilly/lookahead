@@ -6,6 +6,7 @@ import {
   type TaskStatus,
 } from '@/actions/lookahead';
 import { getProjectForUser } from '@/actions/project';
+import { TaskGantt } from '@/components/lookahead/TaskGantt';
 import { TaskList, type TaskRow } from '@/components/lookahead/TaskList';
 import { WindowPickerForm } from '@/components/lookahead/WindowPickerForm';
 import { requireUser } from '@/lib/auth-helpers';
@@ -121,6 +122,8 @@ export default async function LookaheadPage({
           </ul>
         </section>
       )}
+
+      <TaskGantt tasks={tasks} />
 
       <section className="mt-16">
         <h2 className="display-uppercase text-[color:var(--foreground)] text-sm">
