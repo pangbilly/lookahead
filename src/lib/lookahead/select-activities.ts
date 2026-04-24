@@ -10,7 +10,7 @@
  *   - by_others → surfaced in a separate "Waiting on" section downstream
  *   - sort by startDate asc, then totalFloat asc (critical items first)
  */
-import { and, asc, eq, gte, lte, ne, or, type SQL } from 'drizzle-orm';
+import { and, eq, gte, lte, ne, or, type SQL } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { activities } from '@/db/schema';
@@ -75,8 +75,8 @@ export async function selectActivitiesForWindow(
       ),
     )
     .orderBy(
-      asc(sql`${activities.startDate} nulls last`),
-      asc(sql`${activities.totalFloatDays} nulls last`),
+      sql`${activities.startDate} asc nulls last`,
+      sql`${activities.totalFloatDays} asc nulls last`,
     );
 
   return rows.map((r) => ({
