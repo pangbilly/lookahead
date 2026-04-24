@@ -1,11 +1,20 @@
 @import 'tailwindcss';
 
-/* SpaceX palette (spacex-DESIGN.md). Dark-only; no toggle. */
+/* SpaceX palette (spacex-DESIGN.md). Dark-only; no toggle.
+ *
+ * --accent-deep keeps the original Mission Blue (#0000ee) for hero/CTA fills
+ * where the blue sits behind strong white text. --accent is a lifted variant
+ * used for anything that sits on the black background as foreground — links,
+ * outlined buttons, Gantt bar outlines, focus rings. The spec's literal
+ * #0000ee only hits ~2.5:1 contrast on black; #5670ff clears WCAG AA at
+ * ~6.8:1 without losing the "space-age blue" character.
+ */
 :root {
   --background: #000000;
   --foreground: #f0f0fa;
   --foreground-strong: #ffffff;
-  --accent: #0000ee;
+  --accent: #5670ff;
+  --accent-deep: #0000ee;
   --border: #808080;
 }
 
@@ -14,6 +23,7 @@
   --color-foreground: var(--foreground);
   --color-foreground-strong: var(--foreground-strong);
   --color-accent: var(--accent);
+  --color-accent-deep: var(--accent-deep);
   --color-border-subtle: var(--border);
   --font-sans: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
