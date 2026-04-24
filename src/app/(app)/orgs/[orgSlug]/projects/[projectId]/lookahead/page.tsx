@@ -6,8 +6,8 @@ import {
   type TaskStatus,
 } from '@/actions/lookahead';
 import { getProjectForUser } from '@/actions/project';
-import { TaskGantt } from '@/components/lookahead/TaskGantt';
-import { TaskList, type TaskRow } from '@/components/lookahead/TaskList';
+import { LookaheadTable } from '@/components/lookahead/LookaheadTable';
+import type { TaskRow } from '@/components/lookahead/TaskList';
 import { WindowPickerForm } from '@/components/lookahead/WindowPickerForm';
 import { requireUser } from '@/lib/auth-helpers';
 
@@ -159,24 +159,20 @@ export default async function LookaheadPage({
         </section>
       )}
 
-      <TaskGantt
-        tasks={tasks}
-        fixedWindow={
-          activeWindow
-            ? { start: activeWindow.windowStart, end: activeWindow.windowEnd }
-            : undefined
-        }
-      />
-
       <section className="mt-16">
         <h2 className="display-uppercase text-[color:var(--foreground)] text-sm">
           {activeWindow
             ? `Tasks for ${activeWindow.windowStart} → ${activeWindow.windowEnd}`
             : 'Tasks'}
         </h2>
-        <div className="mt-6">
-          <TaskList tasks={tasks} />
-        </div>
+        <LookaheadTable
+          tasks={tasks}
+          fixedWindow={
+            activeWindow
+              ? { start: activeWindow.windowStart, end: activeWindow.windowEnd }
+              : undefined
+          }
+        />
       </section>
     </main>
   );
