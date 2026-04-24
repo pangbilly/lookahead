@@ -61,13 +61,6 @@ const MONTHS = [
 
 type Granularity = 'day' | 'week' | 'month';
 
-const DAY_COL = 32;
-const WEEK_COL = 60;
-const MONTH_COL = 72;
-
-const LEFT_COL = 260;
-const RIGHT_COL = 300;
-
 function parseISODate(iso: string): Date {
   return new Date(iso + 'T00:00:00Z');
 }
@@ -106,7 +99,6 @@ type Computed = {
   granularity: Granularity;
   origin: Date;
   cols: number;
-  colWidth: number;
   colLabels: string[];
   colSubLabels: string[] | null;
   weekendCols: Set<number>;
@@ -166,7 +158,6 @@ function computeTimeline(
       granularity,
       origin,
       cols,
-      colWidth: DAY_COL,
       colLabels,
       colSubLabels,
       weekendCols,
@@ -188,7 +179,6 @@ function computeTimeline(
       granularity,
       origin,
       cols,
-      colWidth: WEEK_COL,
       colLabels,
       colSubLabels: null,
       weekendCols: new Set(),
@@ -213,7 +203,6 @@ function computeTimeline(
     granularity,
     origin,
     cols,
-    colWidth: MONTH_COL,
     colLabels,
     colSubLabels: null,
     weekendCols: new Set(),
@@ -256,7 +245,7 @@ export function LookaheadTable({ tasks, fixedWindow }: Props) {
 
   if (tasks.length === 0) {
     return (
-      <p className="text-sm text-[color:var(--foreground)]/70">
+      <p className="mt-4 text-sm text-[color:var(--foreground)]/70">
         No tasks yet. Pick a window above and click Generate.
       </p>
     );
@@ -271,14 +260,11 @@ export function LookaheadTable({ tasks, fixedWindow }: Props) {
   const mine = sorted.filter((t) => !t.activityByOthers);
   const byOthers = sorted.filter((t) => t.activityByOthers);
 
-  const trackWidth = computed.cols * computed.colWidth;
-  const totalWidth = LEFT_COL + trackWidth + RIGHT_COL;
-
   return (
-    <div className="mt-4 border border-[color:var(--border)]/40 overflow-x-auto">
-      <div style={{ width: totalWidth }}>
-        {/* Legend */}
-        <div className="flex items-center gap-4 px-4 py-2 border-b border-[color:var(--border)]/40 text-[10px] text-[color:var(--foreground)]/70 display-uppercase">
+    <div className="mt-4 w-full border border-[color:var(--border)]/40 overflow-x-auto">
+      <div className="min-w-[720px]">
+        {/* Legend bar */}
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-[color:var(--border)]/40 text-[10px] text-[color:var(--foreground)]/70 display-uppercase flex-wrap">
           <span className="text-[color:var(--foreground)]/50">
             Granularity: {computed.granularity}
           </span>
@@ -289,84 +275,80 @@ export function LookaheadTable({ tasks, fixedWindow }: Props) {
           <LegendSwatch status="done" />
         </div>
 
-        {/* Date header */}
-        <div
-          className="flex border-b border-[color:var(--border)]/40 bg-[color:var(--foreground)]/5"
-          style={{ height: computed.colSubLabels ? 48 : 32 }}
-        >
-          <div
-            className="shrink-0 border-r border-[color:var(--border)]/40 flex items-center px-4"
-            style={{ width: LEFT_COL }}
-          >
-            <span className="display-uppercase text-[10px] text-[color:var(--foreground)]/60">
-              Task
-            </span>
-          </div>
-          <div className="flex" style={{ width: trackWidth }}>
-            {computed.colLabels.map((label, i) => {
-              const isWeekend = computed.weekendCols.has(i);
-              const isToday = computed.todayCol === i;
-              return (
-                <div
-                  key={i}
-                  className="border-r border-[color:var(--border)]/15 text-center flex flex-col justify-center"
-                  style={{
-                    width: computed.colWidth,
-                    backgroundColor: isWeekend
-                      ? 'rgba(128,128,128,0.06)'
-                      : undefined,
-                  }}
-                >
-                  <span
-                    className={`display-uppercase text-[10px] ${
-                      isToday
-                        ? 'text-[color:var(--accent)]'
-                        : 'text-[color:var(--foreground)]/60'
-                    }`}
-                  >
-                    {label}
-                  </span>
-                  {computed.colSubLabels && (
-                    <span
-                      className={`text-[11px] ${
-                        isToday
-                          ? 'text-[color:var(--accent)] font-bold'
-                          : 'text-[color:var(--foreground-strong)]'
-                      }`}
-                    >
-                      {computed.colSubLabels[i]}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <div
-            className="shrink-0 border-l border-[color:var(--border)]/40 flex items-center px-4"
-            style={{ width: RIGHT_COL }}
-          >
-            <span className="display-uppercase text-[10px] text-[color:var(--foreground)]/60">
-              Status
-            </span>
-          </div>
-        </div>
+        <HeaderRow computed={computed} />
 
-        {/* Sections */}
         <Section
           title={`My tasks (${mine.length})`}
           tasks={mine}
           computed={computed}
-          trackWidth={trackWidth}
         />
         {byOthers.length > 0 && (
           <Section
             title={`Waiting on others (${byOthers.length})`}
             tasks={byOthers}
             computed={computed}
-            trackWidth={trackWidth}
             subtle
           />
         )}
+      </div>
+    </div>
+  );
+}
+
+function HeaderRow({ computed }: { computed: Computed }) {
+  return (
+    <div
+      className="flex items-stretch border-b border-[color:var(--border)]/40 bg-[color:var(--foreground)]/5"
+      style={{ minHeight: computed.colSubLabels ? 48 : 32 }}
+    >
+      <div className="w-[220px] shrink-0 border-r border-[color:var(--border)]/40 flex items-center px-4">
+        <span className="display-uppercase text-[10px] text-[color:var(--foreground)]/60">
+          Task
+        </span>
+      </div>
+      <div className="flex flex-1 min-w-0">
+        {computed.colLabels.map((label, i) => {
+          const isWeekend = computed.weekendCols.has(i);
+          const isToday = computed.todayCol === i;
+          return (
+            <div
+              key={i}
+              className="border-r border-[color:var(--border)]/15 text-center flex flex-col justify-center min-w-0"
+              style={{
+                flex: '1 1 0',
+                backgroundColor: isWeekend
+                  ? 'rgba(128,128,128,0.06)'
+                  : undefined,
+              }}
+            >
+              <span
+                className={`display-uppercase text-[10px] ${
+                  isToday
+                    ? 'text-[color:var(--accent)]'
+                    : 'text-[color:var(--foreground)]/60'
+                }`}
+              >
+                {label}
+              </span>
+              {computed.colSubLabels && (
+                <span
+                  className={`text-[11px] ${
+                    isToday
+                      ? 'text-[color:var(--accent)] font-bold'
+                      : 'text-[color:var(--foreground-strong)]'
+                  }`}
+                >
+                  {computed.colSubLabels[i]}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="w-[260px] shrink-0 border-l border-[color:var(--border)]/40 flex items-center px-4">
+        <span className="display-uppercase text-[10px] text-[color:var(--foreground)]/60">
+          Status
+        </span>
       </div>
     </div>
   );
@@ -376,37 +358,23 @@ function Section({
   title,
   tasks,
   computed,
-  trackWidth,
   subtle,
 }: {
   title: string;
   tasks: TaskRow[];
   computed: Computed;
-  trackWidth: number;
   subtle?: boolean;
 }) {
   if (tasks.length === 0) return null;
   return (
     <>
-      <div
-        className="flex items-center border-t border-b border-[color:var(--border)]/40 bg-[color:var(--foreground)]/3"
-        style={{ height: 28 }}
-      >
-        <div
-          className="display-uppercase text-[10px] px-4 text-[color:var(--foreground)]/70"
-          style={{ width: LEFT_COL }}
-        >
+      <div className="flex items-center h-7 border-t border-b border-[color:var(--border)]/40 bg-[color:var(--foreground)]/[0.03]">
+        <div className="display-uppercase text-[10px] px-4 text-[color:var(--foreground)]/70">
           {title}
         </div>
       </div>
       {tasks.map((t) => (
-        <TaskLine
-          key={t.id}
-          task={t}
-          computed={computed}
-          trackWidth={trackWidth}
-          subtle={subtle}
-        />
+        <TaskLine key={t.id} task={t} computed={computed} subtle={subtle} />
       ))}
     </>
   );
@@ -415,12 +383,10 @@ function Section({
 function TaskLine({
   task,
   computed,
-  trackWidth,
   subtle,
 }: {
   task: TaskRow;
   computed: Computed;
-  trackWidth: number;
   subtle?: boolean;
 }) {
   const router = useRouter();
@@ -444,19 +410,19 @@ function TaskLine({
     });
   };
 
+  const leftPct = offsets ? (offsets.startCol * 100) / computed.cols : 0;
+  const widthPct = offsets ? (offsets.span * 100) / computed.cols : 0;
+
   return (
     <>
       <div
-        className={`flex border-b border-[color:var(--border)]/15 ${
+        className={`flex items-stretch border-b border-[color:var(--border)]/15 ${
           subtle ? 'opacity-80' : ''
         } ${status === 'done' ? 'opacity-60' : ''}`}
-        style={{ height: 44 }}
+        style={{ minHeight: 48 }}
       >
         {/* Task info */}
-        <div
-          className="shrink-0 border-r border-[color:var(--border)]/40 flex flex-col justify-center px-4"
-          style={{ width: LEFT_COL }}
-        >
+        <div className="w-[220px] shrink-0 border-r border-[color:var(--border)]/40 flex flex-col justify-center px-4 py-2 min-w-0">
           <p
             className={`text-xs text-[color:var(--foreground-strong)] truncate ${
               status === 'done' ? 'line-through' : ''
@@ -476,18 +442,16 @@ function TaskLine({
           </p>
         </div>
 
-        {/* Gantt track */}
-        <div
-          className="relative shrink-0"
-          style={{ width: trackWidth, height: 44 }}
-        >
+        {/* Gantt track — fills the available width */}
+        <div className="relative flex-1 min-w-0">
+          {/* Weekend stripes (day granularity only) */}
           {computed.granularity === 'day' && (
             <div className="absolute inset-0 flex pointer-events-none">
               {Array.from({ length: computed.cols }).map((_, i) => (
                 <div
                   key={i}
                   style={{
-                    width: computed.colWidth,
+                    flex: '1 1 0',
                     backgroundColor: computed.weekendCols.has(i)
                       ? 'rgba(128,128,128,0.05)'
                       : undefined,
@@ -496,42 +460,40 @@ function TaskLine({
               ))}
             </div>
           )}
+          {/* Today line */}
           {computed.todayCol !== null && (
             <div
               className="absolute top-0 bottom-0 border-l border-dashed pointer-events-none"
               style={{
-                left: computed.todayCol * computed.colWidth,
+                left: `calc(${computed.todayCol} * 100% / ${computed.cols})`,
                 borderColor: 'var(--accent)',
                 opacity: 0.6,
               }}
             />
           )}
+          {/* Bar */}
           {offsets && (
             <div
               className="absolute top-1/2 -translate-y-1/2 flex items-center px-2 text-[10px]"
               style={{
-                left: offsets.startCol * computed.colWidth + 2,
-                width: Math.max(4, offsets.span * computed.colWidth - 4),
+                left: `calc(${leftPct}% + 2px)`,
+                width: `calc(${widthPct}% - 4px)`,
+                minWidth: 4,
                 height: 22,
                 backgroundColor: barStyle.fill,
                 border: `1px solid ${barStyle.border}`,
                 color: barStyle.text,
               }}
             >
-              {offsets.span * computed.colWidth > 80 && (
-                <span className="truncate display-uppercase text-[10px]">
-                  {barStyle.label}
-                </span>
-              )}
+              <span className="truncate display-uppercase text-[10px]">
+                {barStyle.label}
+              </span>
             </div>
           )}
         </div>
 
         {/* Status controls */}
-        <div
-          className="shrink-0 border-l border-[color:var(--border)]/40 flex items-center gap-1.5 px-3"
-          style={{ width: RIGHT_COL }}
-        >
+        <div className="w-[260px] shrink-0 border-l border-[color:var(--border)]/40 flex items-center gap-1 px-2 py-2">
           {STATUS_BUTTONS.map((s) => {
             const active = status === s;
             const label = STATUS_STYLES[s].label;
@@ -544,7 +506,7 @@ function TaskLine({
                   setStatus(s);
                   save(s);
                 }}
-                className={`display-uppercase text-[10px] h-8 px-2 flex-1 border transition-colors ${
+                className={`display-uppercase text-[10px] h-8 flex-1 border transition-colors ${
                   active
                     ? 'border-[color:var(--accent)] bg-[color:var(--accent)]/10 text-[color:var(--foreground-strong)]'
                     : 'border-[color:var(--border)]/60 text-[color:var(--foreground)]/80 hover:border-[color:var(--accent)]'
@@ -558,17 +520,11 @@ function TaskLine({
         </div>
       </div>
 
-      {/* Blocker note row */}
+      {/* Blocker note */}
       {status === 'blocked' && (
-        <div
-          className="flex border-b border-[color:var(--border)]/15 bg-[color:var(--foreground)]/3"
-          style={{ height: 36 }}
-        >
-          <div className="shrink-0" style={{ width: LEFT_COL }} />
-          <div
-            className="shrink-0 flex items-center px-3"
-            style={{ width: trackWidth + RIGHT_COL }}
-          >
+        <div className="flex border-b border-[color:var(--border)]/15 bg-[color:var(--foreground)]/[0.03]">
+          <div className="w-[220px] shrink-0" />
+          <div className="flex-1 flex items-center px-3 py-2 min-w-0">
             <input
               type="text"
               value={blockerNote}
@@ -583,16 +539,18 @@ function TaskLine({
               className="flex-1 h-8 bg-transparent border border-[color:var(--border)]/60 px-3 text-xs text-[color:var(--foreground-strong)] placeholder:text-[color:var(--foreground)]/40 focus:outline-none focus:border-[color:var(--accent)]"
             />
           </div>
+          <div className="w-[260px] shrink-0" />
         </div>
       )}
 
-      {/* Error row */}
+      {/* Error */}
       {error && (
         <div className="flex border-b border-[color:var(--border)]/15">
-          <div className="shrink-0" style={{ width: LEFT_COL }} />
-          <div className="px-3 py-1 text-[10px] text-[color:var(--accent)]">
+          <div className="w-[220px] shrink-0" />
+          <div className="flex-1 px-3 py-1 text-[10px] text-[color:var(--accent)]">
             {error}
           </div>
+          <div className="w-[260px] shrink-0" />
         </div>
       )}
     </>
