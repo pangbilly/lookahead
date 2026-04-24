@@ -1,24 +1,32 @@
 /**
  * Turn raw extracted pages into normalised rows per the detected tool.
  *
- * First pass — deliberately lossy. Finds the header row and uses it as the
- * column list, then for each subsequent row with a matching cell count,
- * zips the cells to the headers by index. Rows with unexpected cell counts
- * are emitted as `{ _raw: "col1 | col2 | col3" }` so they still appear in
- * the review grid (PR 5b), where a human can fix alignment or split.
+ * Strategy:
+ *   1. Find the header row — the first row whose cells match 3+ of the
+ *      tool's canonical column names.
+ *   2. Record the x-position of each matched header cell. The rightmost
+ *      matched header's x is treated as the right edge of the data table;
+ *      everything further right (Gantt bars, year axis) is clipped.
+ *   3. For every subsequent row, clip to x <= tableRightEdge, then map
+ *      each remaining cell to the nearest header column by x-distance.
+ *   4. Rows that don't produce at least one non-empty cell are skipped.
  *
- * Good enough for first-pass inspection and dogfooding. PR 5a is
- * explicitly not the final parser — PR 5b gives the user the tools to fix
- * what this produces, and a Claude-vision fallback path lives in
- * `./vision-fallback.ts` (stubbed for now, implemented when we hit a PDF
- * this parser can't handle).
+ * This makes the parser robust against the common Gantt-export layout
+ * where the left panel (the table) sits alongside a wide Gantt chart on
+ * the right. Bar labels, year axis, and Gantt legend all ignored.
  */
 import type { ExtractedRow } from '@/db/schema';
-import type { ExtractedPage } from './extract-text-layer';
+import type { Cell, ExtractedPage, Row } from './extract-text-layer';
 import type { DetectedTool } from './patterns';
+import { TOOL_COLUMNS } from './patterns';
 
-const MSP_HEADER_KEYWORDS = ['id', 'task name', 'duration', 'start', 'finish'];
-const P6_HEADER_KEYWORDS = ['activity id', 'activity name', 'start', 'finish'];
+type HeaderMatch = {
+  columns: string[];
+  columnXs: number[];
+  rightEdge: number;
+  pageNumber: number;
+  rowIndex: number;
+};
 
 export type ParseResult = {
   columns: string[];
@@ -27,38 +35,35 @@ export type ParseResult = {
   totalRowsSeen: number;
 };
 
-export function parseRows(pages: ExtractedPage[], tool: DetectedTool): ParseResult {
-  const keywords = tool === 'primavera_p6' ? P6_HEADER_KEYWORDS : MSP_HEADER_KEYWORDS;
+const RIGHT_EDGE_PADDING = 50; // PDF units past the last header x to keep
 
-  const headerMatch = findHeaderRow(pages, keywords);
-  if (!headerMatch) {
-    // Fall back: emit every page's rows as raw joined text so nothing is lost.
+export function parseRows(pages: ExtractedPage[], tool: DetectedTool): ParseResult {
+  // Fallback to generic dump for unknown tools — at least the user sees raw text.
+  if (tool === 'other') {
     return fallbackRawRows(pages);
   }
 
-  const { columns, pageNumber, rowIndex } = headerMatch;
+  const canonicalColumns = TOOL_COLUMNS[tool];
+  const headerMatch = findHeaderRow(pages, canonicalColumns);
+  if (!headerMatch) {
+    return fallbackRawRows(pages);
+  }
+
+  const { columns, columnXs, rightEdge, pageNumber, rowIndex } = headerMatch;
   const rows: ExtractedRow[] = [];
   let totalRowsSeen = 0;
 
   for (const page of pages) {
     for (let i = 0; i < page.rows.length; i++) {
-      // Skip the detected header row on its page.
       if (page.pageNumber === pageNumber && i === rowIndex) continue;
+      const row = page.rows[i];
+      if (row.cells.length === 0) continue;
+      if (isHeaderRepeat(row, canonicalColumns)) continue;
 
-      const cells = page.rows[i];
-      if (cells.length === 0) continue;
-      // Heuristic: repeated headers on every page — skip.
-      if (looksLikeHeaderRepeat(cells, keywords)) continue;
-      totalRowsSeen++;
-
-      if (cells.length === columns.length) {
-        const record: ExtractedRow = {};
-        for (let c = 0; c < columns.length; c++) {
-          record[columns[c]] = cells[c] ?? null;
-        }
-        rows.push(record);
-      } else {
-        rows.push({ _raw: cells.join(' | ') });
+      const mapped = mapRowToColumns(row, columns, columnXs, rightEdge);
+      if (mapped && hasAnyValue(mapped)) {
+        rows.push(mapped);
+        totalRowsSeen++;
       }
     }
   }
@@ -66,40 +71,140 @@ export function parseRows(pages: ExtractedPage[], tool: DetectedTool): ParseResu
   return { columns, rows, headerPage: pageNumber, totalRowsSeen };
 }
 
-function findHeaderRow(
-  pages: ExtractedPage[],
-  keywords: string[],
-): { columns: string[]; pageNumber: number; rowIndex: number } | null {
+/**
+ * Find the row whose cells match the canonical column names for this tool.
+ * A cell is considered a match if its lowercased text starts with the
+ * column name (lowercased). The matched cells' x-positions anchor the
+ * column layout for the rest of the table.
+ */
+function findHeaderRow(pages: ExtractedPage[], canonical: string[]): HeaderMatch | null {
+  const lcCanonical = canonical.map((c) => c.toLowerCase());
   for (const page of pages) {
-    // Only scan the first 40 rows of page 1 and first 10 rows of other pages.
     const scanLimit = page.pageNumber === 1 ? 40 : 10;
     for (let i = 0; i < Math.min(page.rows.length, scanLimit); i++) {
       const row = page.rows[i];
-      const rowText = row.join(' ').toLowerCase();
-      const hits = keywords.reduce(
-        (acc, k) => acc + (rowText.includes(k) ? 1 : 0),
-        0,
-      );
-      if (hits >= 3) {
-        return { columns: row, pageNumber: page.pageNumber, rowIndex: i };
+      const match = matchHeaderCells(row, canonical, lcCanonical);
+      if (match && match.columns.length >= 3) {
+        return { ...match, pageNumber: page.pageNumber, rowIndex: i };
       }
     }
   }
   return null;
 }
 
-function looksLikeHeaderRepeat(row: string[], keywords: string[]): boolean {
-  const text = row.join(' ').toLowerCase();
-  const hits = keywords.reduce((acc, k) => acc + (text.includes(k) ? 1 : 0), 0);
+function matchHeaderCells(
+  row: Row,
+  canonical: string[],
+  lcCanonical: string[],
+): Omit<HeaderMatch, 'pageNumber' | 'rowIndex'> | null {
+  // Walk cells left-to-right; collect the first occurrence of each canonical
+  // column. Multi-word headers (e.g. "Activity Name") may span two cells —
+  // concatenate adjacent cells until the prefix matches.
+  const columns: string[] = [];
+  const columnXs: number[] = [];
+  let cursor = 0;
+  for (let idx = 0; idx < canonical.length; idx++) {
+    const needle = lcCanonical[idx];
+    let found = false;
+    let combined = '';
+    let combinedX = 0;
+    let startCursor = cursor;
+    for (let c = cursor; c < row.cells.length; c++) {
+      const cell = row.cells[c];
+      if (combined.length === 0) {
+        combined = cell.text.toLowerCase();
+        combinedX = cell.x;
+        startCursor = c;
+      } else {
+        combined = (combined + ' ' + cell.text).toLowerCase();
+      }
+      if (combined.startsWith(needle)) {
+        columns.push(canonical[idx]);
+        columnXs.push(combinedX);
+        cursor = c + 1;
+        found = true;
+        break;
+      }
+      // Don't let combined strings balloon — cap concatenation at 3 cells.
+      if (c - startCursor >= 2) {
+        combined = '';
+      }
+    }
+    if (!found) {
+      // Skip non-required columns silently; optional ones (By Others, etc.)
+      // may not appear on every export.
+      continue;
+    }
+  }
+
+  if (columns.length < 3) return null;
+
+  const lastX = columnXs[columnXs.length - 1];
+  const rightEdge = lastX + RIGHT_EDGE_PADDING;
+  return { columns, columnXs, rightEdge };
+}
+
+function isHeaderRepeat(row: Row, canonical: string[]): boolean {
+  const text = row.cells.map((c) => c.text).join(' ').toLowerCase();
+  const hits = canonical.reduce(
+    (acc, n) => acc + (text.includes(n.toLowerCase()) ? 1 : 0),
+    0,
+  );
   return hits >= 3;
+}
+
+function mapRowToColumns(
+  row: Row,
+  columns: string[],
+  columnXs: number[],
+  rightEdge: number,
+): ExtractedRow | null {
+  // Clip off the Gantt zone.
+  const leftCells = row.cells.filter((c) => c.x <= rightEdge);
+  if (leftCells.length === 0) return null;
+
+  // For each cell, assign it to the column whose x is <= cell.x and closest.
+  const buckets: Cell[][] = columns.map(() => []);
+  for (const cell of leftCells) {
+    const colIndex = pickColumnIndex(cell.x, columnXs);
+    buckets[colIndex].push(cell);
+  }
+
+  const record: ExtractedRow = {};
+  for (let i = 0; i < columns.length; i++) {
+    const joined = buckets[i]
+      .map((c) => c.text)
+      .join(' ')
+      .trim();
+    record[columns[i]] = joined || null;
+  }
+  return record;
+}
+
+function pickColumnIndex(x: number, columnXs: number[]): number {
+  // The cell belongs to the last column whose header x is <= cell x.
+  // If the cell sits left of the first column, bucket it into the first.
+  let idx = 0;
+  for (let i = 0; i < columnXs.length; i++) {
+    if (columnXs[i] <= x) idx = i;
+    else break;
+  }
+  return idx;
+}
+
+function hasAnyValue(row: ExtractedRow): boolean {
+  for (const key of Object.keys(row)) {
+    if (row[key] && row[key]!.trim().length > 0) return true;
+  }
+  return false;
 }
 
 function fallbackRawRows(pages: ExtractedPage[]): ParseResult {
   const rows: ExtractedRow[] = [];
   for (const page of pages) {
-    for (const cells of page.rows) {
-      if (cells.length === 0) continue;
-      rows.push({ _raw: cells.join(' | ') });
+    for (const row of page.rows) {
+      if (row.cells.length === 0) continue;
+      rows.push({ _raw: row.cells.map((c) => c.text).join(' | ') });
     }
   }
   return { columns: ['_raw'], rows, headerPage: null, totalRowsSeen: rows.length };

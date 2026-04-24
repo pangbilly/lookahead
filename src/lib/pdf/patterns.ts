@@ -1,29 +1,44 @@
 /**
- * Detect which programme-tool exported a PDF by looking for the distinctive
- * column-header row on page 1.
- *
- * Pattern A — MS Project "Gantt Chart"
- *   Headers include: ID, Task Mode, Task Name, Duration, Start, Finish,
- *                    Predecessors, and often By Others, Category 3
- *
- * Pattern B — Primavera P6 "Classic Schedule"
- *   Headers include: Activity ID, Activity Name, Remaining Duration,
- *                    Start, Finish, Total Float
- *   Activity IDs carry project-coded prefixes like "NOS09-KM-1190".
- *
- * We keep detection deliberately forgiving: match keywords case-insensitively
- * anywhere in the first 30 rows.
+ * Detect which programme-tool exported a PDF + expose the canonical column
+ * list for each. Column lists are used by the parser to decide where the
+ * left-panel table ends and the Gantt chart begins.
  */
 import type { ExtractedPage } from './extract-text-layer';
 
 export type DetectedTool = 'ms_project' | 'primavera_p6' | 'other';
 
+export const TOOL_COLUMNS: Record<Exclude<DetectedTool, 'other'>, string[]> = {
+  ms_project: [
+    'ID',
+    'Task Mode',
+    'Task Name',
+    'Duration',
+    'Start',
+    'Finish',
+    'Predecessors',
+    'By Others',
+    'Category 3',
+  ],
+  primavera_p6: [
+    'Activity ID',
+    'Activity Name',
+    'Remaining Duration',
+    'Start',
+    'Finish',
+    'Total Float',
+  ],
+};
+
 export function detectSourceTool(pages: ExtractedPage[]): DetectedTool {
   if (pages.length === 0) return 'other';
 
-  const headerText = pages[0].rows
-    .slice(0, 30)
-    .map((r) => r.join(' '))
+  // Collect text from rows across the first three pages — the MSP Gantt
+  // Export repeats headers at the top of each subsequent page, and the P6
+  // header may sit below a project-title banner on page 1.
+  const headerText = pages
+    .slice(0, 3)
+    .flatMap((p) => p.rows.slice(0, 30))
+    .map((r) => r.cells.map((c) => c.text).join(' '))
     .join(' ')
     .toLowerCase();
 
