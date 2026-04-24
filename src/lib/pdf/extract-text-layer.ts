@@ -11,7 +11,21 @@
  * adjacent text items). The pattern parsers in `./patterns.ts` handle that.
  */
 
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+
+// pdfjs-dist dynamically imports its worker module when getDocument is first
+// called. Next/Turbopack can't trace that, so we resolve the worker file
+// path ourselves and hand pdfjs the absolute file URL up front. Paired with
+// serverExternalPackages: ['pdfjs-dist'] in next.config.ts.
+function resolveWorkerSrc(): string {
+  const workerFile = path.join(
+    process.cwd(),
+    'node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs',
+  );
+  return pathToFileURL(workerFile).href;
+}
 
 export type RawRow = string[];
 export type ExtractedPage = {
@@ -33,8 +47,13 @@ export async function extractTextLayer(buffer: Buffer): Promise<{
   pages: ExtractedPage[];
   allText: string;
 }> {
+  // Configure worker on first call (lazy so we never run this outside a
+  // getDocument() call path — e.g. during Next's build-time page-data pass).
+  if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = resolveWorkerSrc();
+  }
+
   const data = new Uint8Array(buffer);
-  // In Node we run without a separate worker — the legacy build supports this.
   const loadingTask = pdfjsLib.getDocument({
     data,
     useSystemFonts: true,
