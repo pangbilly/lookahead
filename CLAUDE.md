@@ -247,35 +247,41 @@ lookahead/
 
 ## 6. MVP scope — Phase 1 only
 
-**Commit after Phase 1:** a working Next.js 16 + Neon + Auth.js app deployed to Vercel at `lookahead.local` (or the final domain once bought) where a user can:
+**Revised 2026-04-24.** Original plan had Phase 1 stop at org + project + invite; team invitations were to be the closing flow. Billy reordered: the lookahead demo is the commercial pitch, so Phase 1 now runs through programme upload and task generation with **self-assign only**. Invites + multi-user assignment move to Phase 1.5.
+
+**Commit after Phase 1:** a working Next.js 16 + Neon + Auth.js app deployed to Vercel where a user can:
 
 1. Sign up (email/password + Google SSO)
 2. Create an organisation
-3. Create a project
-4. Invite teammates to the org (email invite via Resend — accept flow hits a token-protected route)
-
-That's it for Phase 1. Nothing more. Do not start programme upload in Phase 1.
+3. Create a project within the organisation
+4. Upload a programme PDF (MS Project or Primavera P6)
+5. Confirm the extracted activities in a review grid
+6. Generate a 2- or 4-week lookahead of plain-English tasks
+7. Tick tasks off as done (assigned to themselves)
 
 **Explicitly out of scope in Phase 1:**
-- PDF upload or parsing (Phase 2)
-- Task CRUD (Phase 3)
-- AI translation (Phase 3)
-- Dashboards (Phase 3)
+- Inviting teammates to the org (Phase 1.5)
+- Assigning tasks to other users (Phase 1.5)
+- Team dashboards / owner dashboard across members (Phase 2)
 - Stripe billing (Phase 6)
 - Mobile-specific views (Phase 4)
+- Native MSP / XER / XML parsing (Phase 3+ — PDF-first in Phase 1)
 
 **Deliverables for Phase 1:**
-- [ ] Repo committed, pushed to GitHub
-- [ ] Schema migrated to Neon (use a Neon dev branch)
-- [ ] Auth.js working end-to-end (sign up, log in, log out, session persistence)
-- [ ] Org CRUD (create, rename, list)
-- [ ] Project CRUD within an org
-- [ ] Invite flow (send token link via Resend; accept creates membership)
-- [ ] Basic nav + protected routes via middleware
-- [ ] Deployed to Vercel with preview URL + `X-Robots-Tag: noindex`
+- [x] Repo committed, pushed to GitHub
+- [x] Schema migrated to Neon (dev branch)
+- [x] Auth.js working end-to-end (sign up, log in, log out, session persistence)
+- [x] Org CRUD (create, rename, list)
+- [ ] Project CRUD within an org (PR 4)
+- [ ] Programme upload + text-layer extraction + pattern-A/B parse + raw preview (PR 5a)
+- [ ] Editable review grid; confirm commits activities to DB (PR 5b)
+- [ ] Lookahead window picker + Claude translation + task list + self-assign + mark-done (PR 6)
+- [ ] Deployed to Vercel with preview URL + `X-Robots-Tag: noindex` (PR 7)
 - [ ] README.md with dev + deploy instructions
 
-**Phase 1 exit:** Billy can sign up, create an org called "Pang & Chiu", create a project called "NOS09", invite his own second email as a member, and see both in the dashboard.
+**Phase 1 exit (revised):** Billy can sign up, create the "Pang & Chiu" organisation, create the "NOS09" project, upload one of his real NOS09 PDFs, confirm the extracted activities, generate a 2-week lookahead, and tick one task off. End-to-end on the production Vercel URL.
+
+**Phase 1.5 (bumped from original Phase 1):** Resend-backed invite flow (send token link, accept creates membership), organisation-members list, multi-user task assignment.
 
 See `BRIEF.md` §6 for Phase 2–5.
 
@@ -415,19 +421,24 @@ npm run db:seed          # Seed script (empty in Phase 1)
 
 ## 12. Success criteria for Phase 1
 
-You are done with Phase 1 when:
+You are done with Phase 1 when, on the production Vercel URL:
 
-- [ ] Billy can sign up at the production URL with email/password
-- [ ] He can alternatively sign up with Google
-- [ ] He can create an org, a project, and invite a member by email
-- [ ] Invited member receives a Resend email, clicks the link, lands signed in as a member of that org
-- [ ] The dashboard shows his orgs and projects; clicking a project shows a placeholder "Phase 2 will go here" page
+- [ ] Billy can sign up with email/password
+- [ ] Billy can alternatively sign up with Google SSO
+- [ ] He can create an org called "Pang & Chiu" and a project called "NOS09"
+- [ ] He can upload one of his real NOS09 PDFs (MSP or P6 pattern)
+- [ ] Extraction runs; a review grid shows parsed activities with editable cells
+- [ ] Confirming the grid commits activities to the DB
+- [ ] He can pick a 2- or 4-week lookahead window and generate site tasks
+- [ ] Tasks land assigned to himself; he can mark one as done
 - [ ] All routes behind `(app)` require auth; unauth users redirect to `/login`
-- [ ] Vercel deploy is green; `X-Robots-Tag: noindex` is set; no console errors on first load
-- [ ] README.md documents `npm install`, `npm run dev`, env var setup, and `npx vercel --prod`
+- [ ] `X-Robots-Tag: noindex` is set; no console errors on first load
+- [ ] README.md documents `npm install`, `npm run dev`, env var setup, `npx vercel --prod`
 
-Report to Billy with a screencast or screenshots when complete.
+Report to Billy with screenshots or a screen recording when complete.
+
+**Phase 1.5 success (multi-user):** Billy can invite his own second email via Resend, the invitee accepts and joins as a member, Billy reassigns a task from himself to the invitee, and the invitee sees it on their dashboard.
 
 ---
 
-*End of spec v1.0*
+*End of spec v1.1 — revised 2026-04-24 per Phase 1 pivot (programme-first, invites bumped to 1.5).*
