@@ -28,19 +28,37 @@ export async function generateMetadata({
 
 export default async function LookaheadPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ orgSlug: string; projectId: string }>;
+  searchParams: Promise<{ window?: string }>;
 }) {
   const { orgSlug, projectId } = await params;
+  const { window: windowParam } = await searchParams;
   const user = await requireUser();
   const project = await getProjectForUser(projectId, user.id);
 
   if (!project || project.organizationSlug !== orgSlug) notFound();
 
-  const [windows, rawTasks] = await Promise.all([
-    listWindowsForProject(project.id),
-    listTasksForProject(project.id),
-  ]);
+  const windows = await listWindowsForProject(project.id);
+
+  // Resolve active window: URL param wins, else the latest published one.
+  // `all` → no window filter (show everything across the project).
+  let activeWindowId: string | null = null;
+  const showAll = windowParam === 'all';
+  if (!showAll) {
+    if (windowParam && windows.some((w) => w.id === windowParam)) {
+      activeWindowId = windowParam;
+    } else if (windows.length > 0) {
+      activeWindowId = windows[0].id;
+    }
+  }
+  const activeWindow =
+    activeWindowId != null ? windows.find((w) => w.id === activeWindowId) : null;
+
+  const rawTasks = await listTasksForProject(project.id, {
+    windowId: activeWindowId ?? undefined,
+  });
 
   const tasks: TaskRow[] = rawTasks.map((t) => ({
     id: t.id,
@@ -57,6 +75,8 @@ export default async function LookaheadPage({
     activityByOthers: t.activityByOthers,
     blockerNote: t.blockerNote,
   }));
+
+  const pageBase = `/orgs/${project.organizationSlug}/projects/${project.id}/lookahead`;
 
   return (
     <main className="px-10 py-16">
@@ -101,33 +121,58 @@ export default async function LookaheadPage({
       </section>
 
       {windows.length > 0 && (
-        <section className="mt-16 max-w-2xl">
+        <section className="mt-16">
           <h2 className="display-uppercase text-[color:var(--foreground)] text-sm">
-            Published windows
+            Viewing
           </h2>
-          <ul className="mt-4 divide-y divide-[color:var(--border)]/30 border border-[color:var(--border)]/40">
-            {windows.map((w) => (
-              <li
-                key={w.id}
-                className="flex items-center justify-between px-5 py-3 text-xs"
-              >
-                <span className="text-[color:var(--foreground-strong)]">
+          <div className="mt-4 flex flex-wrap gap-2">
+            {windows.map((w) => {
+              const isActive = activeWindowId === w.id;
+              return (
+                <Link
+                  key={w.id}
+                  href={`${pageBase}?window=${w.id}`}
+                  className={`display-uppercase text-xs px-4 h-10 inline-flex items-center border ${
+                    isActive
+                      ? 'border-[color:var(--accent)] bg-[color:var(--accent)]/10 text-[color:var(--foreground-strong)]'
+                      : 'border-[color:var(--border)]/60 text-[color:var(--foreground)]/80 hover:border-[color:var(--accent)]'
+                  }`}
+                >
                   {w.windowStart} → {w.windowEnd}
-                </span>
-                <span className="display-uppercase text-[color:var(--foreground)]/60">
-                  {w.windowWeeks} wk · {w.publishedAt.toISOString().slice(0, 10)}
-                </span>
-              </li>
-            ))}
-          </ul>
+                  <span className="ml-3 text-[color:var(--foreground)]/50">
+                    {w.windowWeeks} wk
+                  </span>
+                </Link>
+              );
+            })}
+            <Link
+              href={`${pageBase}?window=all`}
+              className={`display-uppercase text-xs px-4 h-10 inline-flex items-center border ${
+                showAll
+                  ? 'border-[color:var(--accent)] bg-[color:var(--accent)]/10 text-[color:var(--foreground-strong)]'
+                  : 'border-[color:var(--border)]/60 text-[color:var(--foreground)]/80 hover:border-[color:var(--accent)]'
+              }`}
+            >
+              All tasks
+            </Link>
+          </div>
         </section>
       )}
 
-      <TaskGantt tasks={tasks} />
+      <TaskGantt
+        tasks={tasks}
+        fixedWindow={
+          activeWindow
+            ? { start: activeWindow.windowStart, end: activeWindow.windowEnd }
+            : undefined
+        }
+      />
 
       <section className="mt-16">
         <h2 className="display-uppercase text-[color:var(--foreground)] text-sm">
-          Tasks
+          {activeWindow
+            ? `Tasks for ${activeWindow.windowStart} → ${activeWindow.windowEnd}`
+            : 'Tasks'}
         </h2>
         <div className="mt-6">
           <TaskList tasks={tasks} />

@@ -192,8 +192,15 @@ export async function listWindowsForProject(projectId: string) {
     .orderBy(desc(lookaheadWindows.publishedAt));
 }
 
-export async function listTasksForProject(projectId: string) {
+export async function listTasksForProject(
+  projectId: string,
+  opts?: { windowId?: string },
+) {
   await requireUser();
+  const conditions = [eq(tasks.projectId, projectId)];
+  if (opts?.windowId) {
+    conditions.push(eq(tasks.lookaheadWindowId, opts.windowId));
+  }
   return db
     .select({
       id: tasks.id,
@@ -212,6 +219,6 @@ export async function listTasksForProject(projectId: string) {
     })
     .from(tasks)
     .leftJoin(activities, eq(activities.id, tasks.activityId))
-    .where(eq(tasks.projectId, projectId))
+    .where(and(...conditions))
     .orderBy(tasks.startDate);
 }

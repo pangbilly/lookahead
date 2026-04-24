@@ -5,6 +5,13 @@ import type { TaskRow } from './TaskList';
 
 type Props = {
   tasks: TaskRow[];
+  /**
+   * Force the timeline to render a specific date range. When supplied, the
+   * granularity is always days and the header spans exactly that range.
+   * Used by the lookahead page to scope the Gantt to the selected 2- or
+   * 4-week window.
+   */
+  fixedWindow?: { start: string; end: string };
 };
 
 type Granularity = 'day' | 'week' | 'month';
@@ -113,26 +120,37 @@ type Computed = {
   todayCol: number | null;
 };
 
-function computeTimeline(tasks: TaskRow[]): Computed | null {
+function computeTimeline(
+  tasks: TaskRow[],
+  fixedWindow?: { start: string; end: string },
+): Computed | null {
   const withDates = tasks.filter((t) => t.startDate || t.dueDate);
-  if (withDates.length === 0) return null;
 
   let min: Date | null = null;
   let max: Date | null = null;
-  for (const t of withDates) {
-    const s = t.startDate ? parseISODate(t.startDate) : null;
-    const f = t.dueDate ? parseISODate(t.dueDate) : null;
-    const taskMin = s ?? f;
-    const taskMax = f ?? s;
-    if (taskMin && (!min || taskMin < min)) min = taskMin;
-    if (taskMax && (!max || taskMax > max)) max = taskMax;
+
+  if (fixedWindow) {
+    min = parseISODate(fixedWindow.start);
+    max = parseISODate(fixedWindow.end);
+  } else {
+    if (withDates.length === 0) return null;
+    for (const t of withDates) {
+      const s = t.startDate ? parseISODate(t.startDate) : null;
+      const f = t.dueDate ? parseISODate(t.dueDate) : null;
+      const taskMin = s ?? f;
+      const taskMax = f ?? s;
+      if (taskMin && (!min || taskMin < min)) min = taskMin;
+      if (taskMax && (!max || taskMax > max)) max = taskMax;
+    }
   }
   if (!min || !max) return null;
 
   const totalDays = daysBetween(min, max) + 1;
   let granularity: Granularity = 'day';
-  if (totalDays > 365) granularity = 'month';
-  else if (totalDays > 60) granularity = 'week';
+  if (!fixedWindow) {
+    if (totalDays > 365) granularity = 'month';
+    else if (totalDays > 60) granularity = 'week';
+  }
 
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
@@ -243,8 +261,11 @@ function taskBarOffsets(
   return { startCol, span: Math.max(1, endCol - startCol + 1) };
 }
 
-export function TaskGantt({ tasks }: Props) {
-  const computed = useMemo(() => computeTimeline(tasks), [tasks]);
+export function TaskGantt({ tasks, fixedWindow }: Props) {
+  const computed = useMemo(
+    () => computeTimeline(tasks, fixedWindow),
+    [tasks, fixedWindow],
+  );
   const sorted = useMemo(
     () =>
       [...tasks].sort((a, b) => {
