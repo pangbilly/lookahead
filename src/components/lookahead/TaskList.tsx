@@ -14,6 +14,15 @@ export type TaskRow = {
   activityIsMilestone: 'task' | 'milestone' | 'summary' | null;
   activityByOthers: boolean | null;
   blockerNote: string | null;
+  assigneeId: string | null;
+  assigneeName: string | null;
+};
+
+export type AssignableMember = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  role: 'owner' | 'pm' | 'member';
 };
 
 type Props = {

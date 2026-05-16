@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
+  listAssignableMembers,
   listTasksForProject,
   listWindowsForProject,
   type TaskStatus,
@@ -56,9 +57,12 @@ export default async function LookaheadPage({
   const activeWindow =
     activeWindowId != null ? windows.find((w) => w.id === activeWindowId) : null;
 
-  const rawTasks = await listTasksForProject(project.id, {
-    windowId: activeWindowId ?? undefined,
-  });
+  const [rawTasks, members] = await Promise.all([
+    listTasksForProject(project.id, {
+      windowId: activeWindowId ?? undefined,
+    }),
+    listAssignableMembers(project.id),
+  ]);
 
   const tasks: TaskRow[] = rawTasks.map((t) => ({
     id: t.id,
@@ -74,6 +78,8 @@ export default async function LookaheadPage({
       | null,
     activityByOthers: t.activityByOthers,
     blockerNote: t.blockerNote,
+    assigneeId: t.assigneeId,
+    assigneeName: t.assigneeName,
   }));
 
   const pageBase = `/orgs/${project.organizationSlug}/projects/${project.id}/lookahead`;
@@ -167,6 +173,7 @@ export default async function LookaheadPage({
         </h2>
         <LookaheadTable
           tasks={tasks}
+          members={members}
           fixedWindow={
             activeWindow
               ? { start: activeWindow.windowStart, end: activeWindow.windowEnd }

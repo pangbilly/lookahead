@@ -2,11 +2,17 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { setTaskStatus, type TaskStatus } from '@/actions/lookahead';
-import type { TaskRow } from './TaskList';
+import {
+  escalateTask,
+  setTaskAssignee,
+  setTaskStatus,
+  type TaskStatus,
+} from '@/actions/lookahead';
+import type { AssignableMember, TaskRow } from './TaskList';
 
 type Props = {
   tasks: TaskRow[];
+  members: AssignableMember[];
   /**
    * When supplied, the Gantt header spans exactly this range at day
    * granularity. Use the active lookahead window's start/end so 2- or
@@ -237,7 +243,7 @@ function taskBarOffsets(
   return { startCol: a, span: Math.max(1, b - a + 1) };
 }
 
-export function LookaheadTable({ tasks, fixedWindow }: Props) {
+export function LookaheadTable({ tasks, members, fixedWindow }: Props) {
   const computed = useMemo(
     () => computeTimeline(tasks, fixedWindow),
     [tasks, fixedWindow],
@@ -281,12 +287,14 @@ export function LookaheadTable({ tasks, fixedWindow }: Props) {
           title={`My tasks (${mine.length})`}
           tasks={mine}
           computed={computed}
+          members={members}
         />
         {byOthers.length > 0 && (
           <Section
             title={`Waiting on others (${byOthers.length})`}
             tasks={byOthers}
             computed={computed}
+            members={members}
             subtle
           />
         )}
@@ -301,7 +309,7 @@ function HeaderRow({ computed }: { computed: Computed }) {
       className="flex items-stretch border-b border-[color:var(--border)]/40 bg-[color:var(--foreground)]/5"
       style={{ minHeight: computed.colSubLabels ? 48 : 32 }}
     >
-      <div className="w-[220px] shrink-0 border-r border-[color:var(--border)]/40 flex items-center px-4">
+      <div className="w-[260px] shrink-0 border-r border-[color:var(--border)]/40 flex items-center px-4">
         <span className="display-uppercase text-[10px] text-[color:var(--foreground)]/60">
           Task
         </span>
@@ -358,11 +366,13 @@ function Section({
   title,
   tasks,
   computed,
+  members,
   subtle,
 }: {
   title: string;
   tasks: TaskRow[];
   computed: Computed;
+  members: AssignableMember[];
   subtle?: boolean;
 }) {
   if (tasks.length === 0) return null;
@@ -374,7 +384,13 @@ function Section({
         </div>
       </div>
       {tasks.map((t) => (
-        <TaskLine key={t.id} task={t} computed={computed} subtle={subtle} />
+        <TaskLine
+          key={t.id}
+          task={t}
+          computed={computed}
+          members={members}
+          subtle={subtle}
+        />
       ))}
     </>
   );
@@ -383,15 +399,18 @@ function Section({
 function TaskLine({
   task,
   computed,
+  members,
   subtle,
 }: {
   task: TaskRow;
   computed: Computed;
+  members: AssignableMember[];
   subtle?: boolean;
 }) {
   const router = useRouter();
   const [status, setStatus] = useState<TaskStatus>(task.status);
   const [blockerNote, setBlockerNote] = useState(task.blockerNote ?? '');
+  const [assigneeId, setAssigneeId] = useState<string>(task.assigneeId ?? '');
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -402,6 +421,31 @@ function TaskLine({
     setError(null);
     startTransition(async () => {
       const res = await setTaskStatus(task.id, next, note);
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      router.refresh();
+    });
+  };
+
+  const assign = (nextId: string) => {
+    setError(null);
+    setAssigneeId(nextId);
+    startTransition(async () => {
+      const res = await setTaskAssignee(task.id, nextId || null);
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      router.refresh();
+    });
+  };
+
+  const escalate = () => {
+    setError(null);
+    startTransition(async () => {
+      const res = await escalateTask(task.id);
       if (!res.ok) {
         setError(res.error);
         return;
@@ -422,7 +466,7 @@ function TaskLine({
         style={{ minHeight: 48 }}
       >
         {/* Task info */}
-        <div className="w-[220px] shrink-0 border-r border-[color:var(--border)]/40 flex flex-col justify-center px-4 py-2 min-w-0">
+        <div className="w-[260px] shrink-0 border-r border-[color:var(--border)]/40 flex flex-col justify-center gap-1 px-4 py-2 min-w-0">
           <p
             className={`text-xs text-[color:var(--foreground-strong)] truncate ${
               status === 'done' ? 'line-through' : ''
@@ -440,6 +484,38 @@ function TaskLine({
                 ? ` · ${task.startDate ?? '—'} → ${task.dueDate ?? '—'}`
                 : ''}
           </p>
+          <div className="flex items-center gap-1">
+            <select
+              value={assigneeId}
+              disabled={isPending}
+              onChange={(e) => assign(e.target.value)}
+              className="flex-1 min-w-0 h-7 bg-transparent border border-[color:var(--border)]/60 text-[10px] text-[color:var(--foreground-strong)] px-1 focus:outline-none focus:border-[color:var(--accent)]"
+              title="Assign to"
+            >
+              <option value="" className="bg-[color:var(--background)]">
+                Unassigned
+              </option>
+              {members.map((m) => (
+                <option
+                  key={m.id}
+                  value={m.id}
+                  className="bg-[color:var(--background)]"
+                >
+                  {(m.name ?? m.email ?? 'Member')}
+                  {m.role !== 'member' ? ` (${m.role})` : ''}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={escalate}
+              title="Escalate to owner + flag blocked"
+              className="shrink-0 h-7 px-2 display-uppercase text-[10px] border border-[color:var(--border)]/60 text-[color:var(--foreground)]/80 hover:border-[color:var(--accent)] hover:text-[color:var(--foreground-strong)]"
+            >
+              ↑ Esc
+            </button>
+          </div>
         </div>
 
         {/* Gantt track — fills the available width */}
@@ -523,7 +599,7 @@ function TaskLine({
       {/* Blocker note */}
       {status === 'blocked' && (
         <div className="flex border-b border-[color:var(--border)]/15 bg-[color:var(--foreground)]/[0.03]">
-          <div className="w-[220px] shrink-0" />
+          <div className="w-[260px] shrink-0" />
           <div className="flex-1 flex items-center px-3 py-2 min-w-0">
             <input
               type="text"
@@ -546,7 +622,7 @@ function TaskLine({
       {/* Error */}
       {error && (
         <div className="flex border-b border-[color:var(--border)]/15">
-          <div className="w-[220px] shrink-0" />
+          <div className="w-[260px] shrink-0" />
           <div className="flex-1 px-3 py-1 text-[10px] text-[color:var(--accent)]">
             {error}
           </div>

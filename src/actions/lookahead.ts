@@ -6,9 +6,11 @@ import { db } from '@/db';
 import {
   activities,
   lookaheadWindows,
+  organizationMembers,
   organizations,
   projects,
   tasks,
+  users,
 } from '@/db/schema';
 import { requireOrgRole, requireUser } from '@/lib/auth-helpers';
 import {
@@ -216,9 +218,127 @@ export async function listTasksForProject(
       activityExternalId: activities.externalId,
       activityIsMilestone: activities.activityType,
       activityByOthers: activities.byOthers,
+      assigneeName: users.name,
+      assigneeEmail: users.email,
     })
     .from(tasks)
     .leftJoin(activities, eq(activities.id, tasks.activityId))
+    .leftJoin(users, eq(users.id, tasks.assigneeId))
     .where(and(...conditions))
     .orderBy(tasks.startDate);
+}
+
+/**
+ * Members of the project's org that a task can be assigned to. Used to
+ * populate the assignee dropdown in the lookahead table.
+ */
+export async function listAssignableMembers(projectId: string) {
+  await requireUser();
+  const [project] = await db
+    .select({ organizationId: projects.organizationId })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  if (!project) return [];
+
+  return db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      role: organizationMembers.role,
+    })
+    .from(organizationMembers)
+    .innerJoin(users, eq(users.id, organizationMembers.userId))
+    .where(eq(organizationMembers.organizationId, project.organizationId))
+    .orderBy(users.name);
+}
+
+async function taskOrgContext(taskId: string) {
+  const [row] = await db
+    .select({
+      id: tasks.id,
+      projectId: tasks.projectId,
+      organizationId: projects.organizationId,
+      organizationSlug: organizations.slug,
+    })
+    .from(tasks)
+    .innerJoin(projects, eq(projects.id, tasks.projectId))
+    .innerJoin(organizations, eq(organizations.id, projects.organizationId))
+    .where(eq(tasks.id, taskId))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function setTaskAssignee(
+  taskId: string,
+  assigneeId: string | null,
+) {
+  const user = await requireUser();
+  const ctx = await taskOrgContext(taskId);
+  if (!ctx) return { ok: false as const, error: 'Task not found' };
+  await requireOrgRole(ctx.organizationId, user.id, ['owner', 'pm', 'member']);
+
+  if (assigneeId) {
+    // Assignee must be a member of this org.
+    const [member] = await db
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(
+        and(
+          eq(organizationMembers.organizationId, ctx.organizationId),
+          eq(organizationMembers.userId, assigneeId),
+        ),
+      )
+      .limit(1);
+    if (!member) {
+      return { ok: false as const, error: 'That person is not in this organisation' };
+    }
+  }
+
+  await db
+    .update(tasks)
+    .set({ assigneeId, updatedAt: new Date() })
+    .where(eq(tasks.id, taskId));
+
+  revalidatePath(
+    `/orgs/${ctx.organizationSlug}/projects/${ctx.projectId}/lookahead`,
+  );
+  return { ok: true as const };
+}
+
+/**
+ * Escalate: reassign the task to the org owner and mark it blocked so it
+ * surfaces. Demo affordance — Phase 1.5 will add a richer escalation model.
+ */
+export async function escalateTask(taskId: string) {
+  const user = await requireUser();
+  const ctx = await taskOrgContext(taskId);
+  if (!ctx) return { ok: false as const, error: 'Task not found' };
+  await requireOrgRole(ctx.organizationId, user.id, ['owner', 'pm', 'member']);
+
+  const [owner] = await db
+    .select({ userId: organizationMembers.userId })
+    .from(organizationMembers)
+    .where(
+      and(
+        eq(organizationMembers.organizationId, ctx.organizationId),
+        eq(organizationMembers.role, 'owner'),
+      ),
+    )
+    .limit(1);
+
+  await db
+    .update(tasks)
+    .set({
+      assigneeId: owner?.userId ?? null,
+      status: 'blocked',
+      updatedAt: new Date(),
+    })
+    .where(eq(tasks.id, taskId));
+
+  revalidatePath(
+    `/orgs/${ctx.organizationSlug}/projects/${ctx.projectId}/lookahead`,
+  );
+  return { ok: true as const };
 }
