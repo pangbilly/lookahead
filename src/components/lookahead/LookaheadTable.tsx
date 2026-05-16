@@ -411,6 +411,7 @@ function TaskLine({
   const [status, setStatus] = useState<TaskStatus>(task.status);
   const [blockerNote, setBlockerNote] = useState(task.blockerNote ?? '');
   const [assigneeId, setAssigneeId] = useState<string>(task.assigneeId ?? '');
+  const [escalated, setEscalated] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -444,10 +445,16 @@ function TaskLine({
 
   const escalate = () => {
     setError(null);
+    // Optimistic: the row jumps to Blocked immediately so the Gantt bar
+    // recolours red and the Esc button shows "recorded" without waiting
+    // for the server round-trip + refresh.
+    setStatus('blocked');
+    setEscalated(true);
     startTransition(async () => {
       const res = await escalateTask(task.id);
       if (!res.ok) {
         setError(res.error);
+        setEscalated(false);
         return;
       }
       router.refresh();
@@ -511,9 +518,13 @@ function TaskLine({
               disabled={isPending}
               onClick={escalate}
               title="Escalate to owner + flag blocked"
-              className="shrink-0 h-7 px-2 display-uppercase text-[10px] border border-[color:var(--border)]/60 text-[color:var(--foreground)]/80 hover:border-[color:var(--accent)] hover:text-[color:var(--foreground-strong)]"
+              className={`shrink-0 h-7 px-2 display-uppercase text-[10px] border transition-colors ${
+                escalated || status === 'blocked'
+                  ? 'border-[#c62828] bg-[#c62828] text-white'
+                  : 'border-[color:var(--border)]/60 text-[color:var(--foreground)]/80 hover:border-[#c62828] hover:text-[color:var(--foreground-strong)]'
+              }`}
             >
-              ↑ Esc
+              {escalated ? '↑ Escalated' : '↑ Esc'}
             </button>
           </div>
         </div>
